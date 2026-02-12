@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: alertcpl-backend
+    env: node
+    plan: starter
+    buildCommand: "npm install"
+    startCommand: "node index.js"
+    autoDeploy: true
+    envVars:
+      - key: PORT
+        value: 5000
