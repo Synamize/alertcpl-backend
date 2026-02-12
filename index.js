@@ -36,6 +36,76 @@ app.get("/test-telegram", async (req, res) => {
   }
 });
 
+// API Routes for Dashboard
+
+// Get all ad accounts
+app.get("/api/accounts", async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from("ad_accounts")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    if (error) throw error;
+
+    res.json(data || []);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get latest CPL logs
+app.get("/api/cpl-logs", async (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit) || 50, 500);
+    const accountId = req.query.account_id;
+
+    let query = supabase
+      .from("cpl_logs")
+      .select("*")
+      .order("checked_at", { ascending: false })
+      .limit(limit);
+
+    if (accountId) {
+      query = query.eq("ad_account_id", accountId);
+    }
+
+    const { data, error } = await query;
+
+    if (error) throw error;
+
+    res.json(data || []);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get alert logs
+app.get("/api/alerts", async (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit) || 50, 500);
+    const accountId = req.query.account_id;
+
+    let query = supabase
+      .from("alert_logs")
+      .select("*")
+      .order("sent_at", { ascending: false })
+      .limit(limit);
+
+    if (accountId) {
+      query = query.eq("ad_account_id", accountId);
+    }
+
+    const { data, error } = await query;
+
+    if (error) throw error;
+
+    res.json(data || []);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Cron job running every minute for testing: "*/1 * * * *"
 // Production: "0 */2 * * *" (every 2 hours)
 cron.schedule("*/1 * * * *", async () => {
@@ -62,99 +132,140 @@ cron.schedule("*/1 * * * *", async () => {
         `\n📈 Checking account: ${account.account_name} (ID: ${account.account_id})`
       );
 
-      // Fetch real spend and leads from Meta API
-      const insights = await fetchAdInsights(account.account_id);
+      // Fetch ad-level data from Meta API
+      const ads = await fetchAdInsights(account.account_id);
 
-      if (!insights) {
+      if (!ads || ads.length === 0) {
+        console.log(`   ⚠️  No ads found for account`);
         continue;
       }
 
-      const { spend, leads } = insights;
+      console.log(`   📊 Found ${ads.length} active ad(s)`);
 
-      // Calculate CPL
-      const calculatedCpl = spend / leads;
+      // Process each ad
+      for (const ad of ads) {
+        const { campaign_name, adset_name, ad_name, ad_id, spend, leads } = ad;
 
-      console.log(
-        `   💰 CPL: $${calculatedCpl.toFixed(2)} | Threshold: $${
-          account.cpl_threshold
-        } | Spend: $${spend.toFixed(2)} | Leads: ${leads}`
-      );
+        // Skip ads with no spend or leads
+        if (spend === 0 || leads === 0) {
+          continue;
+        }
 
-      // Step 3: Insert into cpl_logs
-      const { error: logError } = await supabase.from("cpl_logs").insert([
-        {
-          ad_account_id: account.id,
-          spend,
-          leads,
-          calculated_cpl: calculatedCpl,
-        },
-      ]);
+        // Calculate CPL per ad
+        const calculatedCpl = spend / leads;
 
-      if (logError) throw logError;
-
-      // Check if CPL exceeds threshold
-      if (calculatedCpl > account.cpl_threshold) {
         console.log(
-          `   🚨 Alert Threshold Exceeded! CPL ($${calculatedCpl.toFixed(
+          `     💰 Ad: ${ad_name} | CPL: $${calculatedCpl.toFixed(
             2
-          )}) > Limit ($${account.cpl_threshold})`
+          )} | Spend: $${spend.toFixed(2)} | Leads: ${leads}`
         );
 
-        // Anti-spam check: See if alert was sent in last 2 hours
-        const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
-        const { data: recentAlerts, error: recentAlertsError } = await supabase
-          .from("alert_logs")
-          .select("id")
-          .eq("ad_account_id", account.account_id)
-          .eq("alert_type", "CPL_THRESHOLD_EXCEEDED")
-          .gte("created_at", twoHoursAgo.toISOString())
-          .limit(1);
-
-        if (recentAlertsError) throw recentAlertsError;
-
-        if (recentAlerts && recentAlerts.length > 0) {
-          console.log("   ⏸️  Alert skipped (already sent in last 2 hours)");
-          continue;
-        }
-
-        // Fetch agency details
-        const { data: agency, error: agencyError } = await supabase
-          .from("agencies")
-          .select("name, telegram_chat_id")
-          .eq("id", account.agency_id)
-          .single();
-
-        if (agencyError) throw agencyError;
-
-        if (!agency || !agency.telegram_chat_id) {
-          continue;
-        }
-
-        // Send Telegram alert
-        const alertMessage = `🚨 AlertCPL Warning!\n\nAccount: ${
-          account.account_name
-        }\nCPL: $${calculatedCpl.toFixed(2)}\nThreshold: $${
-          account.cpl_threshold
-        }\nSpend: $${spend}\nLeads: ${leads}`;
-
-        await sendTelegramMessage(agency.telegram_chat_id, alertMessage);
-        console.log("   📱 Telegram alert sent");
-
-        // Insert into alert_logs
-        const { error: alertError } = await supabase.from("alert_logs").insert([
+        // Insert into cpl_logs with ad details
+        const { error: logError } = await supabase.from("cpl_logs").insert([
           {
             ad_account_id: account.id,
-            agency_id: account.agency_id,
-            alert_type: "CPL_THRESHOLD_EXCEEDED",
+            campaign_name,
+            adset_name,
+            ad_name,
+            ad_meta_id: ad_id,
             spend,
             leads,
             calculated_cpl: calculatedCpl,
-            cpl_threshold: account.cpl_threshold,
           },
         ]);
 
-        if (alertError) throw alertError;
-        console.log("   ✅ Alert logged to database");
+        if (logError) {
+          console.error("❌ Error inserting CPL log:", logError.message);
+          continue;
+        }
+
+        // Check if CPL exceeds threshold
+        if (calculatedCpl > account.cpl_threshold) {
+          console.log(
+            `     🚨 Alert! CPL ($${calculatedCpl.toFixed(2)}) > Threshold ($${
+              account.cpl_threshold
+            })`
+          );
+
+          // Anti-spam check: Look for alerts for this specific ad in last 2 hours
+          const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+          const { data: recentAlerts, error: recentAlertsError } =
+            await supabase
+              .from("alert_logs")
+              .select("id")
+              .eq("ad_meta_id", ad_id)
+              .eq("alert_type", "CPL_THRESHOLD_EXCEEDED")
+              .gte("created_at", twoHoursAgo.toISOString())
+              .limit(1);
+
+          if (recentAlertsError) {
+            console.error(
+              "❌ Error checking recent alerts:",
+              recentAlertsError.message
+            );
+            continue;
+          }
+
+          if (recentAlerts && recentAlerts.length > 0) {
+            console.log(
+              "     ⏸️  Alert skipped (already sent in last 2 hours)"
+            );
+            continue;
+          }
+
+          // Fetch agency details
+          const { data: agency, error: agencyError } = await supabase
+            .from("agencies")
+            .select("name, telegram_chat_id")
+            .eq("id", account.agency_id)
+            .single();
+
+          if (agencyError) {
+            console.error("❌ Error fetching agency:", agencyError.message);
+            continue;
+          }
+
+          if (!agency || !agency.telegram_chat_id) {
+            console.log("     ⚠️  Agency not found or missing Telegram ID");
+            continue;
+          }
+
+          // Send Telegram alert with ad details
+          const alertMessage = `🚨 AlertCPL Warning!\n\nCampaign: ${campaign_name}\nAd Set: ${adset_name}\nAd: ${ad_name}\n\nCPL: $${calculatedCpl.toFixed(
+            2
+          )}\nThreshold: $${account.cpl_threshold}\nSpend: $${spend.toFixed(
+            2
+          )}\nLeads: ${leads}`;
+
+          await sendTelegramMessage(agency.telegram_chat_id, alertMessage);
+          console.log("     📱 Telegram alert sent");
+
+          // Insert into alert_logs with ad details
+          const { error: alertError } = await supabase
+            .from("alert_logs")
+            .insert([
+              {
+                ad_account_id: account.id,
+                agency_id: account.agency_id,
+                alert_type: "CPL_THRESHOLD_EXCEEDED",
+                ad_meta_id: ad_id,
+                campaign_name,
+                adset_name,
+                ad_name,
+                spend,
+                leads,
+                calculated_cpl: calculatedCpl,
+                cpl_threshold: account.cpl_threshold,
+              },
+            ]);
+
+          if (alertError) {
+            console.error("❌ Error inserting alert log:", alertError.message);
+            continue;
+          }
+
+          console.log("     ✅ Alert logged to database");
+        }
       }
     }
 
