@@ -12,7 +12,8 @@ const sendTelegramMessage = async (chatId, message) => {
 
         const response = await axios.post(url, {
             chat_id: chatId,
-            text: message
+            text: message,
+            parse_mode: 'HTML'
         });
 
         return response.data;
