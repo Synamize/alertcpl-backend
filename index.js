@@ -17,7 +17,7 @@ app.get("/", (req, res) => {
 });
 
 app.get("/health", (req, res) => {
-  res.status(200).json({ status: "AlertCPL Running" });
+  res.status(200).send("OK");
 });
 
 // Track last sync time
@@ -606,7 +606,7 @@ app.delete("/api/accounts/:id", async (req, res) => {
 // Cron job running every 15 minutes
 let isJobRunning = false;
 
-cron.schedule("*/15 * * * *", async () => {
+cron.schedule("0 * * * *", async () => {
   if (isJobRunning) {
     console.log("⚠️ CPL Alert Engine skipped (Previous job still running)");
     return;
@@ -614,6 +614,7 @@ cron.schedule("*/15 * * * *", async () => {
 
   isJobRunning = true;
   lastSyncTime = new Date();
+  console.log("⏰ Production cron triggered:", new Date().toISOString());
   console.log(`\n🔥 CPL Alert Engine started: ${new Date().toISOString()}`);
 
   try {
@@ -841,6 +842,14 @@ cron.schedule("*/15 * * * *", async () => {
 });
 
 app.listen(PORT, () => {
-  console.log("Enhanced Alert System Enabled");
-  console.log(`Server running on port ${PORT}`);
+  console.log("🚀 AlertCPL Production Mode Enabled");
+  console.log(`🚀 AlertCPL Production Server running on port ${PORT}`);
+});
+
+process.on("unhandledRejection", (err) => {
+  console.error("Unhandled Rejection:", err);
+});
+
+process.on("uncaughtException", (err) => {
+  console.error("Uncaught Exception:", err);
 });
