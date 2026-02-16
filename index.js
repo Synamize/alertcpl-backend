@@ -606,15 +606,17 @@ app.delete("/api/accounts/:id", async (req, res) => {
 // Cron job running every 15 minutes
 let isJobRunning = false;
 
-cron.schedule("0 * * * *", async () => {
+// Core Alert Engine Logic
+async function runAlertEngine() {
   if (isJobRunning) {
     console.log("⚠️ CPL Alert Engine skipped (Previous job still running)");
-    return;
+    return { success: false, message: "Job already running" };
   }
 
   isJobRunning = true;
   lastSyncTime = new Date();
-  console.log("⏰ Production cron triggered:", new Date().toISOString());
+
+  // Log based on trigger method (Cron or Manual) - simplified for shared logic
   console.log(`\n🔥 CPL Alert Engine started: ${new Date().toISOString()}`);
 
   try {
@@ -628,7 +630,7 @@ cron.schedule("0 * * * *", async () => {
 
     if (!accounts || accounts.length === 0) {
       isJobRunning = false;
-      return;
+      return { success: true, message: "No active accounts found" };
     }
 
     console.log(`✅ Found ${accounts.length} active account(s)`);
@@ -834,12 +836,49 @@ cron.schedule("0 * * * *", async () => {
     }
 
     console.log(`\n✨ CPL Alert Engine completed: ${new Date().toISOString()}`);
+    return { success: true, message: "Alert engine cycle completed" };
+
   } catch (error) {
     console.error("❌ Error in CPL Alert Engine:", error.message);
+    return { success: false, message: error.message };
   } finally {
     isJobRunning = false;
   }
+}
+
+// Secure Manual Trigger Endpoint (Production External Cron)
+app.post("/run-alert-engine", async (req, res) => {
+  const authHeader = req.headers["x-cron-secret"];
+  const secret = process.env.CRON_SECRET;
+
+  if (!secret) {
+    console.error("❌ CRON_SECRET not defined in environment");
+    return res.status(500).json({ error: "Server misconfiguration" });
+  }
+
+  if (authHeader !== secret) {
+    console.warn("⚠️ Unauthorized attempt to trigger alert engine");
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  console.log("🚀 Manual/External trigger for Alert Engine received");
+
+  // Run logic
+  const result = await runAlertEngine();
+
+  res.json(result);
 });
+
+// Internal Cron Job (Disable in Production)
+if (process.env.NODE_ENV !== "production") {
+  cron.schedule("0 * * * *", async () => {
+    console.log("⏰ Internal cron triggered (Non-Production)", new Date().toISOString());
+    await runAlertEngine();
+  });
+  console.log("🕒 Internal cron enabled (Non-Production)");
+} else {
+  console.log("🚫 Internal cron disabled (Production Mode)");
+}
 
 app.listen(PORT, () => {
   console.log("🚀 AlertCPL Production Mode Enabled");
