@@ -866,7 +866,7 @@ app.post("/run-alert-engine", async (req, res) => {
   // Run logic
   const result = await runAlertEngine();
 
-  res.json(result);
+  res.status(200).send("OK");
 });
 
 // Internal Cron Job (Disable in Production)
