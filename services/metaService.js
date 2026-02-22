@@ -27,8 +27,10 @@ async function getActiveCampaignIds(accountId) {
     }
 
     const activeIds = campaigns.map(c => c.id);
-    console.log(`   ✅ Found ${activeIds.length} active campaigns:`);
-    campaigns.forEach(c => console.log(`      - ${c.name} (${c.id})`));
+    console.log(`   ✅ Found ${activeIds.length} active campaigns`);
+    if (process.env.NODE_ENV !== "production") {
+      campaigns.forEach(c => console.log(`      - ${c.name} (${c.id})`));
+    }
     return activeIds;
 
   } catch (error) {
@@ -116,8 +118,10 @@ async function fetchAdInsights(accountId, datePreset = "maximum") {
       return [];
     }
 
-    console.log(`   📊 Found ${validData.length} ads under active campaigns:`);
-    validData.forEach(ad => console.log(`      - ${ad.ad_name} (${ad.campaign_name})`));
+    console.log(`   📊 Found ${validData.length} ads under active campaigns`);
+    if (process.env.NODE_ENV !== "production") {
+      validData.forEach(ad => console.log(`      - ${ad.ad_name} (${ad.campaign_name})`));
+    }
 
     // Parse each ad and extract relevant metrics
     const ads = validData.map((item) => {

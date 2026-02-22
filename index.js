@@ -667,25 +667,23 @@ async function runAlertEngine() {
         if (leads === 0) {
           if (spend >= account.cpl_threshold) {
             alertType = "ZERO_LEADS";
-            console.log(`\n     🔹 Campaign: ${campaign_name}`);
-            console.log(`     🔸 Ad Set: ${adset_name}`);
-            console.log(
-              `     📄 Ad: ${ad_name} | Spend: $${spend.toFixed(2)} | Leads: 0`
-            );
-            console.log(`     🚨 Zero Leads Alert Triggered! Spend > Threshold ($${account.cpl_threshold})`);
+            if (process.env.NODE_ENV !== "production") {
+              console.log(`\n     🔹 Campaign: ${campaign_name}`);
+              console.log(`     🔸 Ad Set: ${adset_name}`);
+              console.log(`     📄 Ad: ${ad_name} | Spend: $${spend.toFixed(2)} | Leads: 0`);
+            }
+            console.log(`     🚨 Zero Leads Alert! Ad: ${ad_name} | Spend: $${spend.toFixed(2)} > Threshold ($${account.cpl_threshold})`);
           }
         }
         // CHECK 2: High CPL Logic
         else {
           calculatedCpl = spend / leads;
 
-          console.log(`\n     🔹 Campaign: ${campaign_name}`);
-          console.log(`     🔸 Ad Set: ${adset_name}`);
-          console.log(
-            `     📄 Ad: ${ad_name} | CPL: $${calculatedCpl.toFixed(
-              2
-            )} | Spend: $${spend.toFixed(2)} | Leads: ${leads}`
-          );
+          if (process.env.NODE_ENV !== "production") {
+            console.log(`\n     🔹 Campaign: ${campaign_name}`);
+            console.log(`     🔸 Ad Set: ${adset_name}`);
+            console.log(`     📄 Ad: ${ad_name} | CPL: $${calculatedCpl.toFixed(2)} | Spend: $${spend.toFixed(2)} | Leads: ${leads}`);
+          }
 
           // Insert into cpl_logs (only if leads > 0 to have valid CPL)
           const { error: logError } = await supabase.from("cpl_logs").insert([
@@ -707,10 +705,7 @@ async function runAlertEngine() {
 
           if (calculatedCpl > account.cpl_threshold) {
             alertType = "HIGH_CPL";
-            console.log(
-              `     🚨 High CPL Alert Triggered! CPL ($${calculatedCpl.toFixed(2)}) > Threshold ($${account.cpl_threshold
-              })`
-            );
+            console.log(`     🚨 High CPL Alert! Ad: ${ad_name} | CPL: $${calculatedCpl.toFixed(2)} > Threshold ($${account.cpl_threshold})`);
           }
         }
 
